@@ -37,32 +37,6 @@ def create_model(opt):
 
 def criterion():
     return F.cross_entropy
-
-
-def load_from_checkpoint(option):
-    path = option['continual_ckpt_path']
-    opt = ckpt['opt']
-    model.load_state_dict(ckpt['model_state_dict'])
-    optim = None
-    if opt['optimizer'] == "sgd":
-        optim = torch.optim.SGD(model.parameters())
-    elif opt['optimizer'] == "adam":
-        optim = torch.optim.Adam(model.parameters())
-    elif opt['optimizer'] == "adamw":
-        optim = torch.optim.AdamW(model.parameters())
-    
-    optim.load_state_dict(ckpt['optimizer_state_dict'])
-
-    return model,\
-           optim,\
-           ckpt['losses'],\
-           ckpt['val_losses'],\
-           ckpt['train_acc'],\
-           ckpt['val_acc'],\
-           ckpt['epoch'],\
-           ckpt['opt']
-
-
 def evaluate(model, val_loader, opt):
     model.eval()
     correct = 0
@@ -117,20 +91,41 @@ def train_one_iter(model, optim, train_load, val_loader, opt, epoch, lr_schedule
             optim.step()
             tp.set_postfix(loss=loss_item, train_acc=train_acc)
         val_loss, val_acc = evaluate(model, val_loader, opt)
-        lr_scheduler.step(val_loss)
+        lr_scheduler.step()
         losses /= len(tp)
         print(f"Epoch {epoch}/{opt['epoch']} is finished with validation accuracy is {val_acc}")
 
     return model, optim, losses, total_correct / total_sample, val_loss, val_acc
+def load_from_checkpoint(option):
+    ckpt = torch.load(option['continual_checkpoint_pth'])
+    opt = ckpt['opt']
+    model = create_model(opt)
+    model = model.to(ckpt['device'])
+    model.load_state_dict(ckpt['model_state_dict'])
+    optim = None
+    if opt['optimizer'] == "sgd":
+        optim = torch.optim.SGD(model.parameters())
+    elif opt['optimizer'] == "adam":
+        optim = torch.optim.Adam(model.parameters())
+    elif opt['optimizer'] == "adamw":
+        optim = torch.optim.AdamW(model.parameters())
+    optim.load_state_dict(ckpt['optimizer_state_dict'])
 
+    return model,\
+           optim,\
+           ckpt['epoch'],\
+           ckpt['losses'],\
+           ckpt['val_losses'],\
+           ckpt['train_acc'],\
+           ckpt['val_acc'],\
+           opt
 def training_process(opt):
     train_loader, val_loader = getTrainValLoader(opt)
 
     if opt['resume_from_checkpoint']:
-      model, optim, losses, val_losses, train_accuracies, val_accuracies, init_epoch, opt = load_from_checkpoint(opt)
+      model, optim, init_epoch, losses, val_losses, train_accuracies, val_accuracies, opt = load_from_checkpoint(opt)
       best_model = model
       best_val_acc = val_accuracies[-1]
-      best_epoch = init_epoch
     else:
 
       model = create_model(opt)
@@ -142,25 +137,33 @@ def training_process(opt):
       val_losses = []
       train_accuracies = []
       init_epoch = 1
+
+
+      optim = None
+      if opt['optimizer'] == "sgd":
+          optim = torch.optim.SGD(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], nesterov=True)
+      elif opt['optimizer'] == "adam":
+          optim = torch.optim.Adam(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], eps=1e-7)
+      elif opt['optimizer'] == "adamw":
+          optim = torch.optim.AdamW(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], eps=1e-7)
+
+
+
+    #print(opt['use_gpu'])
     if opt['use_gpu'] and torch.cuda.is_available():
-        model = model.to("cuda")
+        model = model.cuda()
+        device = 'cuda'
+    else:
+        device = 'cpu'
 
-
-
-    optim = None
-    if opt['optimizer'] == "sgd":
-        optim = torch.optim.SGD(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], nesterov=True)
-    elif opt['optimizer'] == "adam":
-        optim = torch.optim.Adam(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], eps=1e-7)
-    elif opt['optimizer'] == "adamw":
-        optim = torch.optim.AdamW(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], eps=1e-7)
 
     now = datetime.datetime.now()
     #tags = {"author": "Dung Vo", "data": opt.data}
     #runName = f"Data: {opt.data}_Optimization: {opt.optimizer}_LR: {opt.learning_rate}_Batch Size: {opt.batch_size}_DropOut: {opt.dropout}_{datetime.datetime.strftime(now, format='%Y%m%d%H%M%S')}"
 
 
-    lr_scheduler = MultiStepLR(optim, milestones=[10, 20], gamma=0.1, verbose=True)
+    lr_scheduler = MultiStepLR(optim, milestones=[5, 10, 15, 20, 25, 30], gamma=0.2, verbose=True)
+    #reduceLROnPlateau = ReduceLROnPlateau(optim, patience=2, factor=0.1)
     patience_cnt = 0
     for i in range(init_epoch, opt['epoch']+1):
 
@@ -170,12 +173,13 @@ def training_process(opt):
                                                                                 val_loader, opt, epoch = i,
                                                                                 lr_scheduler=lr_scheduler
                                                                                )
-        
         losses.append(epoch_loss)
         val_losses.append(val_loss)
         val_accuracies.append(val_acc)
         train_accuracies.append(train_acc)
         if i % opt['checkpoint_save_freq'] == 0:
+            if not os.path.exists(opt['checkpoint_pth']):
+                os.makedirs(opt['checkpoint_pth'])
             torch.save({
                 'opt': opt,
                 'epoch': i,
@@ -184,7 +188,8 @@ def training_process(opt):
                 'losses': losses,
                 'val_losses': val_losses,
                 'train_acc': train_accuracies,
-                'val_acc': val_accuracies
+                'val_acc': val_accuracies,
+                'device': device
             }, opt['checkpoint_pth']  + f"/checkpoint_e{i}.pt")
         if val_acc > best_val_acc:
             best_model = model
@@ -197,7 +202,8 @@ def training_process(opt):
                 break
 
 
-
+    if not os.path.exists(opt['checkpoint_pth']):
+        os.makedirs(opt['checkpoint_pth'])
     torch.save({
         'opt': opt,
         'model_state_dict': best_model.state_dict(),

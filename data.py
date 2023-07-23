@@ -31,7 +31,9 @@ def getTrainValLoader(opt):
                         target_transform=target_transforms
                         )
 
-  train_set, valid_set = random_split(dataset, [1 - opt['validation_split'], opt['validation_split']])
+  validation_split = int(len(dataset) * opt['validation_split'])
+  train_split = len(dataset) - validation_split
+  train_set, valid_set = random_split(dataset, [train_split, validation_split])
 
   train_loader = DataLoader(train_set, batch_size=opt['batch_size'], shuffle=True, drop_last=True)
   valid_loader = DataLoader(valid_set, batch_size=opt['val_batch_size'], shuffle=False)
