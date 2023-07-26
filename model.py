@@ -1,4 +1,4 @@
-# model.py
+ # model.py
 import torch.nn as nn
 import torch
 from tqdm import tqdm
@@ -6,6 +6,8 @@ from torchvision.datasets import ImageFolder
 from torchvision import transforms
 from torch.utils.data import DataLoader, random_split
 import torchvision
+import os
+import sys
 import torch.nn.functional as F
 import datetime
 from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
@@ -13,11 +15,11 @@ from data import *
 
 
 model_dict = {
-    'resnet18': torchvision.models.resnet18,
-    'resnet34': torchvision.models.resnet34,
-    'resnet50': torchvision.models.resnet50,
-    'resnet101': torchvision.models.resnet101,
-    'resnet152': torchvision.models.resnet152
+    'ResNet18': torchvision.models.resnet18,
+    'ResNet34': torchvision.models.resnet34,
+    'ResNet50': torchvision.models.resnet50,
+    'ResNet101': torchvision.models.resnet101,
+    'ResNet152': torchvision.models.resnet152
 }
 def create_model(opt):
   model_ft = model_dict[opt['model']](progress=False, weights=opt['pretrained_weights'])
@@ -119,13 +121,16 @@ def load_from_checkpoint(option):
            ckpt['train_acc'],\
            ckpt['val_acc'],\
            opt
+
 def training_process(opt):
     train_loader, val_loader = getTrainValLoader(opt)
 
+    os.makedirs(opt['checkpoint_pth'], exist_ok=True)
     if opt['resume_from_checkpoint']:
-      model, optim, init_epoch, losses, val_losses, train_accuracies, val_accuracies, opt = load_from_checkpoint(opt)
-      best_model = model
-      best_val_acc = val_accuracies[-1]
+      model, optim, init_epoch, losses,  val_losses, train_accuracies, val_accuracies, opt = load_from_checkpoint(opt)
+      #best_model = model
+      #best_val_acc = ckpt
+      #
     else:
 
       model = create_model(opt)
@@ -135,26 +140,19 @@ def training_process(opt):
       losses = []
       val_accuracies = []
       val_losses = []
-      train_accuracies = []
       init_epoch = 1
-
+      train_accuracies = []
 
       optim = None
       if opt['optimizer'] == "sgd":
-          optim = torch.optim.SGD(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], nesterov=True)
+          optim = torch.optim.SGD(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], nesterov=True, momentum=0.9)
       elif opt['optimizer'] == "adam":
           optim = torch.optim.Adam(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], eps=1e-7)
       elif opt['optimizer'] == "adamw":
           optim = torch.optim.AdamW(model.parameters(), lr=opt['learning_rate'], weight_decay=opt['weight_decay'], eps=1e-7)
-
-
-
-    #print(opt['use_gpu'])
     if opt['use_gpu'] and torch.cuda.is_available():
-        model = model.cuda()
-        device = 'cuda'
-    else:
-        device = 'cpu'
+        model = model.to("cuda")
+
 
 
     now = datetime.datetime.now()
@@ -165,7 +163,7 @@ def training_process(opt):
     lr_scheduler = MultiStepLR(optim, milestones=[5, 10, 15, 20, 25, 30], gamma=0.2, verbose=True)
     #reduceLROnPlateau = ReduceLROnPlateau(optim, patience=2, factor=0.1)
     patience_cnt = 0
-    for i in range(init_epoch, opt['epoch']+1):
+    for i in range(1, opt['epoch']+1):
 
 
         model, optim, epoch_loss, train_acc, val_loss, val_acc = train_one_iter(model,
@@ -177,9 +175,7 @@ def training_process(opt):
         val_losses.append(val_loss)
         val_accuracies.append(val_acc)
         train_accuracies.append(train_acc)
-        if i % opt['checkpoint_save_freq'] == 0:
-            if not os.path.exists(opt['checkpoint_pth']):
-                os.makedirs(opt['checkpoint_pth'])
+        if i % opt['checkpoint_save_freq'] == 0 and opt['save_checkpoint']:
             torch.save({
                 'opt': opt,
                 'epoch': i,
@@ -189,7 +185,7 @@ def training_process(opt):
                 'val_losses': val_losses,
                 'train_acc': train_accuracies,
                 'val_acc': val_accuracies,
-                'device': device
+                'device': "cuda" if opt['use_gpu'] and torch.cuda.is_available() else "cpu"
             }, opt['checkpoint_pth']  + f"/checkpoint_e{i}.pt")
         if val_acc > best_val_acc:
             best_model = model
@@ -202,10 +198,17 @@ def training_process(opt):
                 break
 
 
-    if not os.path.exists(opt['checkpoint_pth']):
-        os.makedirs(opt['checkpoint_pth'])
+
     torch.save({
         'opt': opt,
         'model_state_dict': best_model.state_dict(),
+        'optimizer_state_dict': optim.state_dict(),
+        'epoch': best_epoch,
+        'losses': losses[:best_epoch],
+        'val_losses': val_losses[:best_epoch],
+        'train_acc': train_accuracies[:best_epoch],
+        'val_acc': val_accuracies[:best_epoch],
+        'device': "cuda" if opt['use_gpu'] and torch.cuda.is_available() else "cpu"
+
     }, opt['checkpoint_pth'] + "/final_model.pt")
-    return losses, val_losses, train_accuracies, val_accuracies
+    return best_model, losses, val_losses, train_accuracies, val_accuracies

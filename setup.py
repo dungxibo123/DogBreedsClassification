@@ -10,7 +10,8 @@ for folder in listdir:
 di.sort(key=lambda x: x[1], reverse=True)
 #!rm -rf /content/data/images/CloneImages
 #print(*di[:5], sep="\n")
+
 clone_dir = './data/images/CloneImages'
 os.makedirs('./data/images/CloneImages',exist_ok = True)
-for folder, _ in di[0:20]:
+for folder, _ in di[0:2]:
   shutil.copytree(images_dir + '/' + folder, clone_dir + '/' + folder)

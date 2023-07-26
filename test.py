@@ -2,9 +2,9 @@ from model import training_process
 
 opt = {
     'data_folder': './data/images/CloneImages',
-    'num_classes': 20,
-    'batch_size': 32,
-    'val_batch_size': 128,
+    'num_classes': 2,
+    'batch_size': 8,
+    'val_batch_size': 32,
     'checkpoint_pth': './checkpoint/',
     'resume_from_checkpoint': False,
     'model': 'resnet152',
@@ -19,7 +19,7 @@ opt = {
     'checkpoint_save_freq': 5,
     'validation_split': 0.2,
     'dropout': 0.35,
-    'num_hidden': 512,
+    'num_hidden': 128,
     'continual_checkpoint_pth': '/content/checkpoint/checkpoint_e15.pt'
 
 }
