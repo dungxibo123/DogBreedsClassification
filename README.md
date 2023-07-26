@@ -11,7 +11,7 @@ Make sure you can use [Kaggle API](https://www.kaggle.com/docs/api).
 > pip install -U --force-reinstall protobuf==3.13.0 altair==4.0.0 # Due to the confliction some where inside the streamlit package
 ```
 
-**Note: ** If you have a GPU device, make sure you have installed the PyTorch package with compatible cuda version.
+**Note:** If you have a GPU device, make sure you have installed the PyTorch package with compatible cuda version.
 ## 2. Preparation
 
 ```bash
